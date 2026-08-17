@@ -54,17 +54,42 @@ def _get(section, key, env_name):
     return None
 
 
+PLACEHOLDER_VALUES = {
+    "your_instagram_username",
+    "your_instagram_password",
+}
+
+
+def _is_real_secret(value):
+    return bool(value) and value.strip() not in PLACEHOLDER_VALUES
+
+
 insta_username = _get("instagram", "username", "INSTAGRAM_USERNAME")
 insta_password = _get("instagram", "password", "INSTAGRAM_PASSWORD")
+scrape_start_date = _get("scrape", "start_date", "SCRAPE_START_DATE") or "2023-10-07"
+try:
+    scrape_max_scrolls = int(_get("scrape", "max_scrolls", "SCRAPE_MAX_SCROLLS") or "20")
+except ValueError:
+    scrape_max_scrolls = 20
+download_media = (_get("scrape", "download_media", "DOWNLOAD_MEDIA") or "yes").lower() in (
+    "yes",
+    "true",
+    "1",
+)
+
+
+def has_instagram_credentials() -> bool:
+    return _is_real_secret(insta_username) and _is_real_secret(insta_password)
 
 
 def require_instagram_credentials():
-    if insta_username and insta_password:
+    if has_instagram_credentials():
         return
     searched = ", ".join(_config_paths())
     raise SystemExit(
         "Missing Instagram credentials.\n"
-        "Copy dhs622_config.cfg.example to dhs622_config.cfg (or ~/dhs622_config.cfg) "
-        "and fill in username/password, or set INSTAGRAM_USERNAME and INSTAGRAM_PASSWORD.\n"
+        "Open dhs622_config.cfg and put in the Instagram username and password "
+        "for the account YOU will log in with (not the channels you want to scrape).\n"
+        "You can also set INSTAGRAM_USERNAME and INSTAGRAM_PASSWORD.\n"
         f"Looked in: {searched}"
     )

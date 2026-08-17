@@ -106,14 +106,22 @@ def extract_videos_from_post(post: dict) -> list[dict]:
     return this_post_video_metadata
 
 
-def fetch_images(images: list[dict], image_dir: str = IMAGE_DIR) -> None:
+def fetch_images(images: list[dict], image_dir: str = IMAGE_DIR, record_in_db: bool = False) -> None:
     os.makedirs(image_dir, exist_ok=True)
     for image in images:
         image_name = get_image_name(post_id=image["post_id"], image_url=image["image_url"])
         image_full_path = os.path.join(image_dir, image_name)
+        if record_in_db:
+            from database import mark_media_downloaded, upsert_media
+
+            upsert_media(image["post_id"], "image", image["image_url"])
 
         if os.path.exists(image_full_path):
             print("skipping (already downloaded)")
+            if record_in_db:
+                from database import mark_media_downloaded
+
+                mark_media_downloaded(image["image_url"], image_full_path)
             continue
 
         print(f"downloading image {image['image_url']}...")
@@ -122,16 +130,28 @@ def fetch_images(images: list[dict], image_dir: str = IMAGE_DIR) -> None:
 
         with open(image_full_path, "wb") as binary_file:
             binary_file.write(resp.content)
+        if record_in_db:
+            from database import mark_media_downloaded
+
+            mark_media_downloaded(image["image_url"], image_full_path)
 
 
-def fetch_videos(videos: list[dict], video_dir: str = VIDEO_DIR) -> None:
+def fetch_videos(videos: list[dict], video_dir: str = VIDEO_DIR, record_in_db: bool = False) -> None:
     os.makedirs(video_dir, exist_ok=True)
     for video in videos:
         video_name = get_video_name(post_id=video["post_id"], video_url=video["video_url"])
         video_full_path = os.path.join(video_dir, video_name)
+        if record_in_db:
+            from database import upsert_media
+
+            upsert_media(video["post_id"], "video", video["video_url"])
 
         if os.path.exists(video_full_path):
             print("skipping (already downloaded)")
+            if record_in_db:
+                from database import mark_media_downloaded
+
+                mark_media_downloaded(video["video_url"], video_full_path)
             continue
 
         print(f"downloading video {video['video_url']}...")
@@ -140,17 +160,51 @@ def fetch_videos(videos: list[dict], video_dir: str = VIDEO_DIR) -> None:
 
         with open(video_full_path, "wb") as binary_file:
             binary_file.write(resp.content)
+        if record_in_db:
+            from database import mark_media_downloaded
+
+            mark_media_downloaded(video["video_url"], video_full_path)
+
+
+def download_records(data: list[dict], image_dir: str, video_dir: str, record_in_db: bool = False) -> None:
+    for record in data:
+        try:
+            images = extract_images_from_post(record)
+        except Exception as exc:
+            print(f"skipping images for post {record.get('id')}: {exc}")
+            images = []
+        try:
+            videos = extract_videos_from_post(record)
+        except Exception as exc:
+            print(f"skipping videos for post {record.get('id')}: {exc}")
+            videos = []
+        fetch_images(images, image_dir, record_in_db=record_in_db)
+        fetch_videos(videos, video_dir, record_in_db=record_in_db)
+
+
+def download_from_db(image_dir: str = IMAGE_DIR, video_dir: str = VIDEO_DIR) -> None:
+    from database import init_db, list_posts
+
+    init_db()
+    rows = list_posts()
+    data = [json.loads(row["raw_json"]) for row in rows]
+    print(f"downloading media for {len(data)} posts from the database")
+    download_records(data, image_dir, video_dir, record_in_db=True)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Download images and videos listed in a content metadata JSONL file."
+        description="Download images and videos from the database or a content metadata JSONL file."
     )
     parser.add_argument(
         "--input",
         "-i",
-        required=True,
         help="Path to the *_content_metadata.jsonl file produced by insta_scraper_poc.py",
+    )
+    parser.add_argument(
+        "--from-db",
+        action="store_true",
+        help="Download media for every post stored in scraper.db",
     )
     parser.add_argument("--image-dir", default=IMAGE_DIR)
     parser.add_argument("--video-dir", default=VIDEO_DIR)
@@ -159,10 +213,8 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    data = load_data(args.input)
-
-    for record in data:
-        images = extract_images_from_post(record)
-        videos = extract_videos_from_post(record)
-        fetch_images(images, args.image_dir)
-        fetch_videos(videos, args.video_dir)
+    if args.from_db or not args.input:
+        download_from_db(args.image_dir, args.video_dir)
+    else:
+        data = load_data(args.input)
+        download_records(data, args.image_dir, args.video_dir)

@@ -1,3 +1,11 @@
 [instagram]
 username = your_instagram_username
 password = your_instagram_password
+
+[scrape]
+# Optional. Posts older than this date are not collected.
+start_date = 2023-10-07
+# How far to scroll on each channel.
+max_scrolls = 20
+# yes = also download images and videos after scraping
+download_media = yes

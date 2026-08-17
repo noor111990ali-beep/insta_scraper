@@ -8,6 +8,8 @@ import json
 from datetime import datetime, timezone
 from typing import Optional
 
+import database
+
 user_data_list = []
 post_data_list = []
 user_jsonl_path = ""
@@ -35,15 +37,33 @@ POPUP_BUTTON_NAMES = (
 )
 
 
+def set_output_paths(handle: str) -> None:
+    global user_jsonl_path, content_jsonl_path
+    user_jsonl_path = os.path.join(os.path.dirname(__file__), f"{handle}_user_metadata.jsonl")
+    content_jsonl_path = os.path.join(
+        os.path.dirname(__file__), f"{handle}_content_metadata.jsonl"
+    )
+
+
 def save_user_metadata(user_record: dict):
-    with open(user_jsonl_path, "a") as my_file:
-        my_file.write(json.dumps(user_record) + "\n")
+    if user_jsonl_path:
+        with open(user_jsonl_path, "a") as my_file:
+            my_file.write(json.dumps(user_record) + "\n")
+    try:
+        database.save_user(user_record)
+    except Exception as exc:
+        print(f"could not save user to database: {exc}")
 
 
 def save_content_metadata(content_records: list[dict]):
-    with open(content_jsonl_path, "a") as my_file:
-        for content_record in content_records:
-            my_file.write(json.dumps(content_record) + "\n")
+    if content_jsonl_path:
+        with open(content_jsonl_path, "a") as my_file:
+            for content_record in content_records:
+                my_file.write(json.dumps(content_record) + "\n")
+    try:
+        database.save_posts(content_records)
+    except Exception as exc:
+        print(f"could not save posts to database: {exc}")
 
 
 def extract_from_api_payload(data: dict) -> tuple[Optional[dict], list[dict]]:
@@ -314,13 +334,7 @@ def reached_start_date(start_date: Optional[str]) -> bool:
     return min(timestamps) <= cutoff_ts
 
 
-def run(
-    playwright: Playwright,
-    seed: dict,
-    auth_json_path: str,
-    headless: bool,
-    max_scrolls: int,
-) -> None:
+def create_browser(playwright: Playwright, auth_json_path: str, headless: bool):
     browser = playwright.chromium.launch(headless=headless)
     storage_state = (
         auth_json_path
@@ -339,7 +353,6 @@ def run(
     )
     page = context.new_page()
     page.on("response", intercept_response)
-
     page.goto("https://www.instagram.com", wait_until="domcontentloaded")
     log_in_if_necessary(page, context, auth_json_path)
     dismiss_popups(page)
@@ -352,6 +365,14 @@ def run(
             raise
         print("Home icon not found; continuing after login anyway")
     context.storage_state(path=auth_json_path)
+    return browser, context, page
+
+
+def scrape_handle(page, seed: dict, max_scrolls: int) -> int:
+    post_data_list.clear()
+    user_data_list.clear()
+    database.set_scrape_context(database._context.get("run_id"), seed["handle"])
+    set_output_paths(seed["handle"])
 
     visit_target_home_page(page, seed["handle"])
     expect(page.get_by_text(seed["handle"])).to_be_visible()
@@ -382,10 +403,24 @@ def run(
             seen = len(post_data_list)
             print(f"captured {seen} posts so far (scroll {scroll_index + 1}/{max_scrolls})")
 
-    print(f"done. saved {len(post_data_list)} posts to {content_jsonl_path}")
-    context.storage_state(path=auth_json_path)
-    context.close()
-    browser.close()
+    print(f"done. saved {len(post_data_list)} posts for @{seed['handle']}")
+    return len(post_data_list)
+
+
+def run(
+    playwright: Playwright,
+    seed: dict,
+    auth_json_path: str,
+    headless: bool,
+    max_scrolls: int,
+) -> None:
+    browser, context, page = create_browser(playwright, auth_json_path, headless)
+    try:
+        scrape_handle(page, seed, max_scrolls)
+    finally:
+        context.storage_state(path=auth_json_path)
+        context.close()
+        browser.close()
 
 
 def parse_args():
@@ -408,18 +443,20 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     require_instagram_credentials()
+    database.init_db()
 
     auth_json_path = os.path.join(
         os.path.dirname(__file__), f"login_cookies_{insta_username}.json"
     )
     seed = {"handle": args.handle.lstrip("@"), "start_date": args.start_date}
-
-    user_jsonl_path = os.path.join(
-        os.path.dirname(__file__), f"{seed['handle']}_user_metadata.jsonl"
-    )
-    content_jsonl_path = os.path.join(
-        os.path.dirname(__file__), f"{seed['handle']}_content_metadata.jsonl"
-    )
-
-    with sync_playwright() as playwright:
-        run(playwright, seed, auth_json_path, args.headless_mode, args.max_scrolls)
+    set_output_paths(seed["handle"])
+    run_id = database.start_run()
+    database.set_scrape_context(run_id, seed["handle"])
+    database.upsert_channel(seed["handle"], start_date=seed["start_date"])
+    try:
+        with sync_playwright() as playwright:
+            run(playwright, seed, auth_json_path, args.headless_mode, args.max_scrolls)
+        database.finish_run(run_id, "ok")
+    except Exception as exc:
+        database.finish_run(run_id, "error", str(exc))
+        raise

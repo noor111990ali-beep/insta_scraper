@@ -1,46 +1,55 @@
-# Instagram scraper (DHS622 / Social Media Exposed, Chapter 7)
+# Instagram scraper — start here
 
-Python proof-of-concept that logs into Instagram with Playwright, intercepts GraphQL/API responses while scrolling a profile, and then downloads images and videos from the saved metadata.
+You do **not** need to copy code or install a separate database program. This project uses a simple file called `scraper.db` that is created for you.
 
-Use an Instagram account you control, and only scrape accounts you are allowed to collect for the course. Instagram may challenge logins from new browsers or datacenter IPs; if that happens, run once with `--headed` on your own machine and reuse the saved cookies.
+Before any scrape can run, I need two things from you:
 
-## Setup
+1. **The Instagram account you will log in with** (username and password). Use an account you control. This is not the same as the channels you want to collect.
+2. **The channel handles** you want to scrape, for example `nasa` or `https://www.instagram.com/natgeo/`.
+
+You can send both in your next message. If you see a form for secrets, put the password there instead of typing it in chat.
+
+Use an account you own, and only collect channels you are allowed to collect for the course.
+
+## If you want to fill the files yourself
+
+1. Install once:
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium
 ```
 
-Copy the example config and put in the Instagram username/password for the account you will log in with:
+On Windows, activate with `.venv\Scripts\activate`.
 
-```bash
-cp dhs622_config.cfg.example dhs622_config.cfg
+2. Put your Instagram login in `dhs622_config.cfg` (a starter copy is created when you run setup):
+
+```
+[instagram]
+username = your_username
+password = your_password
 ```
 
-You can also keep the file at `~/dhs622_config.cfg` (the original course location) or set `INSTAGRAM_USERNAME` and `INSTAGRAM_PASSWORD`.
+3. Put channels in `channels.txt`, one per line:
 
-## Scrape a profile
-
-```bash
-python insta_scraper_poc.py --handle eye.on.palestine --start-date 2023-10-07 --max-scrolls 20
+```
+nasa
+natgeo
 ```
 
-- `--headed` shows the browser (needed if Instagram asks for extra verification).
-- `--headless` hides it (default when no display is attached).
-- Posts are appended to `HANDLE_content_metadata.jsonl` and `HANDLE_user_metadata.jsonl`.
-- Login cookies are saved as `login_cookies_USERNAME.json` so later runs can skip the login form.
-
-The loop stops after `--max-scrolls`, after three scrolls with no new posts, or once it sees content older than `--start-date`.
-
-## Download media
+4. Check that everything is ready, then scrape:
 
 ```bash
-python get_assets.py --input eye.on.palestine_content_metadata.jsonl
+python setup.py
+python run.py
 ```
 
-Files go to `downloads/images` and `downloads/videos` by default.
+`setup.py` creates the database. `run.py` logs into Instagram, visits each channel, stores posts in `scraper.db`, and downloads images/videos into `downloads/`.
+
+To only check status: `python run.py --status`  
+If Instagram asks for extra verification, run `python run.py --headed` on your own computer.
 
 ## Tests
 

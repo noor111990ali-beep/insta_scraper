@@ -5,6 +5,8 @@ venv/
 *.pyc
 
 dhs622_config.cfg
+channels.txt
+scraper.db
 login_cookies_*.json
 *_user_metadata.jsonl
 *_content_metadata.jsonl
