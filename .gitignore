@@ -1,0 +1,14 @@
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+*.pyc
+
+dhs622_config.cfg
+login_cookies_*.json
+*_user_metadata.jsonl
+*_content_metadata.jsonl
+
+downloads/images/
+downloads/videos/
+!downloads/.gitkeep
