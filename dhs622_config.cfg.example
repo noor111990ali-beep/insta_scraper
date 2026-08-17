@@ -2,6 +2,15 @@
 username = your_instagram_username
 password = your_instagram_password
 
+[database]
+# Uses the PostgreSQL you already installed. setup.py will create this database.
+type = postgres
+host = localhost
+port = 5432
+name = insta_scraper
+user = postgres
+password = your_postgres_password
+
 [scrape]
 # Optional. Posts older than this date are not collected.
 start_date = 2023-10-07

@@ -57,6 +57,7 @@ def _get(section, key, env_name):
 PLACEHOLDER_VALUES = {
     "your_instagram_username",
     "your_instagram_password",
+    "your_postgres_password",
 }
 
 
@@ -76,6 +77,42 @@ download_media = (_get("scrape", "download_media", "DOWNLOAD_MEDIA") or "yes").l
     "true",
     "1",
 )
+
+
+def database_settings() -> dict:
+    """Read database settings at call time so setup.py can add the section first."""
+    parser, _path = _read_cfg()
+
+    def pick(section, key, env_name, default=""):
+        value = os.environ.get(env_name)
+        if value:
+            return value
+        if parser.has_option(section, key):
+            return parser.get(section, key)
+        return default
+
+    db_type = (pick("database", "type", "DB_TYPE", "sqlite") or "sqlite").strip().lower()
+    password = pick("database", "password", "POSTGRES_PASSWORD", "")
+    if password.strip() in PLACEHOLDER_VALUES:
+        password = ""
+    try:
+        port = int(pick("database", "port", "POSTGRES_PORT", "5432") or "5432")
+    except ValueError:
+        port = 5432
+    return {
+        "type": db_type,
+        "host": pick("database", "host", "POSTGRES_HOST", "localhost") or "localhost",
+        "port": port,
+        "name": pick("database", "name", "POSTGRES_DB", "insta_scraper") or "insta_scraper",
+        "user": pick("database", "user", "POSTGRES_USER", "postgres") or "postgres",
+        "password": password,
+    }
+
+
+def uses_postgres(db_path: str | None = None) -> bool:
+    if db_path:
+        return False
+    return database_settings()["type"] in ("postgres", "postgresql", "pg")
 
 
 def has_instagram_credentials() -> bool:

@@ -1,12 +1,15 @@
 import json
 
 from channels import load_channels, normalize_handle, write_channels
+from config import uses_postgres
 from database import (
+    describe_database,
     init_db,
     list_channels,
     list_posts,
     save_posts,
     save_user,
+    schema_statements,
     set_scrape_context,
     start_run,
     status_summary,
@@ -72,3 +75,11 @@ def test_setup_checklist_needs_login_and_channels(tmp_path, monkeypatch):
     assert info["channels"] == ["nasa"]
     assert info["has_instagram_login"] is False
     assert info["ready"] is False
+
+
+def test_sqlite_path_does_not_use_postgres(tmp_path):
+    db_path = str(tmp_path / "scraper.db")
+    assert uses_postgres(db_path) is False
+    assert describe_database(db_path) == db_path
+    statements = schema_statements("postgres")
+    assert any("SERIAL PRIMARY KEY" in item for item in statements)
